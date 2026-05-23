@@ -18,6 +18,10 @@ type ShambaToken = {
 };
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
+  // Behind a reverse proxy (Coolify/Traefik) Auth.js v5 rejects the
+  // forwarded Host by default. AUTH_URL pins the canonical origin, but
+  // trustHost is also required so /api/auth/* accepts the proxied host.
+  trustHost: true,
   providers: [
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
