@@ -43,9 +43,8 @@ and push image** workflow publishes the image to
 
 1. DO dashboard → **Create → Droplets**.
 2. Image: **Ubuntu 24.04 LTS x64**.
-3. Plan: **Basic → Regular → 2 vCPU / 4 GB RAM / 80 GB SSD** (≈ $24/mo).
-4. Region: **Frankfurt (FRA1)** or **London (LON1)** — pick the lower-latency
-   one for Kenya (LON1 is usually faster end-to-end via the EASSy cable).
+3. Plan: **Basic → Regular → 1 vCPU / 2 GB RAM / 50 GB SSD** (~$12/mo).
+4. Region: **London (LON1)** — best EA latency.
 5. Authentication: **SSH key**. Paste your public key
    (`cat ~/.ssh/id_ed25519.pub`).
 6. Hostname: `shambatrack-prod`.
@@ -56,6 +55,31 @@ SSH to confirm:
 ```bash
 ssh root@<IP>
 ```
+
+### 2.1 Enable swap (required at 2 GB)
+
+Coolify + Postgres + Redis + the Node runtime use roughly 1.6–1.8 GB
+combined. Without swap, a single `apt-get upgrade` or an image pull
+can OOM-kill containers. Add 2 GB of swap:
+
+```bash
+fallocate -l 2G /swapfile
+chmod 600 /swapfile
+mkswap /swapfile
+swapon /swapfile
+echo '/swapfile none swap sw 0 0' >> /etc/fstab
+# Reduce swap aggressiveness so we only fall back under real pressure
+echo 'vm.swappiness=10' > /etc/sysctl.d/99-swap.conf
+sysctl -p /etc/sysctl.d/99-swap.conf
+free -h    # confirm "Swap: 2.0Gi"
+```
+
+### 2.2 Build strategy at 2 GB — pull from GHCR, don't build on the droplet
+
+Because the GitHub Action already publishes
+`ghcr.io/githumbi/farm-management:latest`, Coolify should *pull* that
+image rather than rebuild it on the droplet. Building Next.js on 2 GB
+will OOM. We configure this in step 5.3.
 
 ---
 
