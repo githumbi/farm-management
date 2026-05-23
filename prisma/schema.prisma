@@ -1,0 +1,341 @@
+// ShambaTrack — full schema (PRD §11.2)
+// Datasource URL is supplied via prisma.config.ts (which loads .env.local).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Currency {
+  KES
+}
+
+enum OwnershipType {
+  owned
+  rented
+}
+
+enum SeasonStatus {
+  planned
+  active
+  closed
+}
+
+enum ExpenseSource {
+  whatsapp
+  web
+  import
+}
+
+enum ExpenseStatus {
+  pending_confirm
+  confirmed
+  rejected
+}
+
+enum AttachmentOwnerType {
+  expense
+  activity
+}
+
+enum WaInboundStatus {
+  received
+  parsed
+  failed
+  pending_routing
+}
+
+model Tenant {
+  id         String    @id @default(uuid()) @db.Uuid
+  google_sub String    @unique
+  email      String
+  name       String?
+  created_at DateTime  @default(now()) @db.Timestamptz
+  deleted_at DateTime? @db.Timestamptz
+
+  users       User[]
+  managers    Manager[]
+  farms       Farm[]
+  seasons     Season[]
+  categories  Category[]
+  expenses    Expense[]
+  revenues    Revenue[]
+  activities  Activity[]
+  attachments Attachment[]
+  wa_inbound  WaInboundMessage[]
+  wa_outbound WaOutboundMessage[]
+  audit_logs  AuditLog[]
+
+  @@map("tenants")
+}
+
+model User {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenant_id  String   @db.Uuid
+  email      String
+  name       String?
+  role       String   @default("owner")
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id])
+
+  @@index([tenant_id])
+  @@map("users")
+}
+
+model Manager {
+  id              String    @id @default(uuid()) @db.Uuid
+  tenant_id       String    @db.Uuid
+  whatsapp_e164   String
+  display_name    String
+  default_farm_id String?   @db.Uuid
+  created_at      DateTime  @default(now()) @db.Timestamptz
+  deactivated_at  DateTime? @db.Timestamptz
+
+  tenant       Tenant        @relation(fields: [tenant_id], references: [id])
+  default_farm Farm?         @relation("ManagerDefaultFarm", fields: [default_farm_id], references: [id])
+  assignments  FarmManager[]
+  expenses     Expense[]
+  activities   Activity[]
+
+  @@unique([tenant_id, whatsapp_e164])
+  @@index([whatsapp_e164])
+  @@map("managers")
+}
+
+model Farm {
+  id             String        @id @default(uuid()) @db.Uuid
+  tenant_id      String        @db.Uuid
+  name           String
+  location       String
+  size_acres     Decimal       @db.Decimal(8, 3)
+  ownership_type OwnershipType
+  cost_kes_cents BigInt?
+  currency       Currency      @default(KES)
+  archived_at    DateTime?     @db.Timestamptz
+  created_at     DateTime      @default(now()) @db.Timestamptz
+
+  tenant      Tenant        @relation(fields: [tenant_id], references: [id])
+  seasons     Season[]
+  managers    FarmManager[]
+  expenses    Expense[]
+  revenues    Revenue[]
+  activities  Activity[]
+  default_for Manager[]     @relation("ManagerDefaultFarm")
+
+  @@index([tenant_id])
+  @@map("farms")
+}
+
+model FarmManager {
+  id            String    @id @default(uuid()) @db.Uuid
+  farm_id       String    @db.Uuid
+  manager_id    String    @db.Uuid
+  assigned_at   DateTime  @default(now()) @db.Timestamptz
+  unassigned_at DateTime? @db.Timestamptz
+
+  farm    Farm    @relation(fields: [farm_id], references: [id])
+  manager Manager @relation(fields: [manager_id], references: [id])
+
+  @@index([manager_id])
+  @@index([farm_id])
+  @@map("farm_managers")
+}
+
+model Season {
+  id         String       @id @default(uuid()) @db.Uuid
+  tenant_id  String       @db.Uuid
+  farm_id    String       @db.Uuid
+  name       String
+  crop_type  String
+  start_date DateTime     @db.Date
+  end_date   DateTime     @db.Date
+  status     SeasonStatus @default(planned)
+  created_at DateTime     @default(now()) @db.Timestamptz
+  closed_at  DateTime?    @db.Timestamptz
+
+  tenant     Tenant     @relation(fields: [tenant_id], references: [id])
+  farm       Farm       @relation(fields: [farm_id], references: [id])
+  expenses   Expense[]
+  revenues   Revenue[]
+  activities Activity[]
+
+  @@index([tenant_id, farm_id])
+  @@map("seasons")
+}
+
+model Category {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenant_id  String?  @db.Uuid
+  name       String
+  slug       String
+  parent_id  String?  @db.Uuid
+  color      String?  @db.VarChar(7)
+  created_at DateTime @default(now()) @db.Timestamptz
+
+  tenant   Tenant?    @relation(fields: [tenant_id], references: [id])
+  parent   Category?  @relation("CategoryHierarchy", fields: [parent_id], references: [id])
+  children Category[] @relation("CategoryHierarchy")
+  expenses Expense[]
+
+  @@unique([tenant_id, slug])
+  @@index([tenant_id])
+  @@map("categories")
+}
+
+model Expense {
+  id                    String        @id @default(uuid()) @db.Uuid
+  tenant_id             String        @db.Uuid
+  farm_id               String        @db.Uuid
+  season_id             String        @db.Uuid
+  category_id           String        @db.Uuid
+  manager_id            String?       @db.Uuid
+  amount_cents          BigInt
+  currency              Currency      @default(KES)
+  occurred_on           DateTime      @db.Date
+  note                  String?
+  source                ExpenseSource
+  status                ExpenseStatus @default(pending_confirm)
+  auto_confirmed        Boolean       @default(false)
+  wa_inbound_message_id String?       @db.Uuid
+  created_at            DateTime      @default(now()) @db.Timestamptz
+  updated_at            DateTime      @updatedAt @db.Timestamptz
+  deleted_at            DateTime?     @db.Timestamptz
+
+  tenant             Tenant            @relation(fields: [tenant_id], references: [id])
+  farm               Farm              @relation(fields: [farm_id], references: [id])
+  season             Season            @relation(fields: [season_id], references: [id])
+  category           Category          @relation(fields: [category_id], references: [id])
+  manager            Manager?          @relation(fields: [manager_id], references: [id])
+  wa_inbound_message WaInboundMessage? @relation(fields: [wa_inbound_message_id], references: [id])
+
+  @@index([tenant_id, farm_id, season_id, occurred_on])
+  @@index([status])
+  @@map("expenses")
+}
+
+model Revenue {
+  id           String    @id @default(uuid()) @db.Uuid
+  tenant_id    String    @db.Uuid
+  farm_id      String    @db.Uuid
+  season_id    String    @db.Uuid
+  amount_cents BigInt
+  currency     Currency  @default(KES)
+  occurred_on  DateTime  @db.Date
+  source_note  String?
+  note         String?
+  created_at   DateTime  @default(now()) @db.Timestamptz
+  deleted_at   DateTime? @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id])
+  farm   Farm   @relation(fields: [farm_id], references: [id])
+  season Season @relation(fields: [season_id], references: [id])
+
+  @@index([tenant_id, farm_id, season_id, occurred_on])
+  @@map("revenues")
+}
+
+model Activity {
+  id          String        @id @default(uuid()) @db.Uuid
+  tenant_id   String        @db.Uuid
+  farm_id     String        @db.Uuid
+  season_id   String?       @db.Uuid
+  manager_id  String?       @db.Uuid
+  body        String
+  occurred_on DateTime      @db.Date
+  source      ExpenseSource
+  created_at  DateTime      @default(now()) @db.Timestamptz
+  deleted_at  DateTime?     @db.Timestamptz
+
+  tenant  Tenant   @relation(fields: [tenant_id], references: [id])
+  farm    Farm     @relation(fields: [farm_id], references: [id])
+  season  Season?  @relation(fields: [season_id], references: [id])
+  manager Manager? @relation(fields: [manager_id], references: [id])
+
+  @@index([tenant_id, farm_id, occurred_on])
+  @@map("activities")
+}
+
+model Attachment {
+  id                     String              @id @default(uuid()) @db.Uuid
+  tenant_id              String              @db.Uuid
+  owner_type             AttachmentOwnerType
+  owner_id               String              @db.Uuid
+  storage_key            String
+  mime_type              String
+  size_bytes             BigInt
+  sha256                 String
+  uploaded_by_user_id    String?             @db.Uuid
+  uploaded_by_manager_id String?             @db.Uuid
+  created_at             DateTime            @default(now()) @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id])
+
+  @@index([tenant_id, owner_type, owner_id])
+  @@index([sha256])
+  @@map("attachments")
+}
+
+model WaInboundMessage {
+  id                String          @id @default(uuid()) @db.Uuid
+  tenant_id         String?         @db.Uuid
+  manager_id        String?         @db.Uuid
+  from_e164         String
+  wa_message_id     String          @unique
+  message_type      String
+  body              String?
+  media_storage_key String?
+  received_at       DateTime        @db.Timestamptz
+  processed_at      DateTime?       @db.Timestamptz
+  status            WaInboundStatus @default(received)
+  parse_result      Json?
+  error             String?
+
+  tenant   Tenant?   @relation(fields: [tenant_id], references: [id])
+  expenses Expense[]
+
+  @@index([from_e164, received_at])
+  @@index([status])
+  @@map("wa_inbound_messages")
+}
+
+model WaOutboundMessage {
+  id                 String    @id @default(uuid()) @db.Uuid
+  tenant_id          String    @db.Uuid
+  to_e164            String
+  body               String
+  template_name      String?
+  status             String
+  sent_at            DateTime? @db.Timestamptz
+  wa_message_id      String?
+  related_expense_id String?   @db.Uuid
+  error              String?
+  created_at         DateTime  @default(now()) @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id])
+
+  @@index([tenant_id, created_at])
+  @@map("wa_outbound_messages")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenant_id   String   @db.Uuid
+  actor_type  String
+  actor_id    String   @db.Uuid
+  action      String
+  entity_type String
+  entity_id   String   @db.Uuid
+  before      Json?
+  after       Json?
+  created_at  DateTime @default(now()) @db.Timestamptz
+
+  tenant Tenant @relation(fields: [tenant_id], references: [id])
+
+  @@index([tenant_id, entity_type, entity_id])
+  @@index([tenant_id, created_at])
+  @@map("audit_log")
+}
