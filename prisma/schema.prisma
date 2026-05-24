@@ -111,6 +111,11 @@ model Farm {
   tenant_id      String        @db.Uuid
   name           String
   location       String
+  // Optional point coordinates so the farm can be plotted on a map.
+  // Latitude is bounded [-90, 90], longitude [-180, 180]; we widen the
+  // decimal precision so ~10cm accuracy fits (6 fractional digits).
+  latitude       Decimal?      @db.Decimal(9, 6)
+  longitude      Decimal?      @db.Decimal(9, 6)
   size_acres     Decimal       @db.Decimal(8, 3)
   ownership_type OwnershipType
   cost_kes_cents BigInt?
@@ -135,6 +140,9 @@ model FarmManager {
   farm_id       String    @db.Uuid
   manager_id    String    @db.Uuid
   assigned_at   DateTime  @default(now()) @db.Timestamptz
+  // Set when the manager replies YES to the WhatsApp template asking
+  // them to confirm the assignment. NULL = pending confirmation.
+  confirmed_at  DateTime? @db.Timestamptz
   unassigned_at DateTime? @db.Timestamptz
 
   farm    Farm    @relation(fields: [farm_id], references: [id])

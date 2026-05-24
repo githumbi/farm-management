@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { auth, signOut } from "@/lib/auth";
@@ -14,7 +15,22 @@ export default async function OwnerLayout({
     <div className="min-h-screen bg-neutral-50">
       <header className="border-b bg-white">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
-          <div className="font-semibold text-neutral-900">ShambaTrack</div>
+          <div className="flex items-center gap-6">
+            <Link
+              href="/dashboard"
+              className="font-semibold text-neutral-900"
+            >
+              ShambaTrack
+            </Link>
+            <nav className="flex items-center gap-4 text-sm text-neutral-600">
+              <Link href="/dashboard" className="hover:text-neutral-900">
+                Dashboard
+              </Link>
+              <Link href="/farms" className="hover:text-neutral-900">
+                Farms
+              </Link>
+            </nav>
+          </div>
           <div className="flex items-center gap-3 text-sm">
             <span className="text-neutral-600">{session.user?.email}</span>
             <form
